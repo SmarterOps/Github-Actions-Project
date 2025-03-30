@@ -5,7 +5,7 @@ on:
     branches: ["master"]
 jobs:
   complie:
-    runs-on: my-own-runner
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,7 @@ jobs:
         
 
   Security-check:
-    runs-on: my-own-runner
+    runs-on: self-hosted
     needs:  complie
 
     steps:
