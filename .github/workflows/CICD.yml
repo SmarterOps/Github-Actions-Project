@@ -117,11 +117,17 @@ jobs:
           distribution: "temurin"
           cache: maven
 
-      # Step 3: Build the project using Maven
+      # Step 3: Set Docker Host
+      - name: Set Docker Host
+        run: |
+          export DOCKER_HOST=unix:///var/run/docker.sock
+          echo "DOCKER_HOST=unix:///var/run/docker.sock" >> $GITHUB_ENV
+
+      # Step 4: Build the project using Maven
       - name: Build Project
         run: mvn package
 
-      # Step 4: Wait for SonarQube to be ready
+      # Step 5: Wait for SonarQube to be ready
       - name: Wait for SonarQube to be ready
         run: |
           echo "Waiting for SonarQube to be ready..."
@@ -134,6 +140,6 @@ jobs:
             sleep 10
           done
 
-      # Step 5: Run SonarQube scan
+      # Step 6: Run SonarQube scan
       - name: SonarQube Scan
         run: mvn sonar:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin
