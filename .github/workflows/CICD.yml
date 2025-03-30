@@ -22,7 +22,6 @@ jobs:
 
   Security-check:
     runs-on: my-own-runner
-    needs: complie
 
     steps:
       - uses: actions/checkout@v4
