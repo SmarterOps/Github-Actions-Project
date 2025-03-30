@@ -1,42 +1,139 @@
+# Name of the workflow
 name: CICD Pipeline
 
+# Trigger the workflow on a push to the "master" branch
 on:
   push:
     branches: ["master"]
+
 jobs:
-  complie:
+  # -------------------------------
+  # Job: Compile
+  # -------------------------------
+  compile:
+    # Specify the runner to execute the job (self-hosted in this case)
     runs-on: self-hosted
 
     steps:
+      # Step 1: Check out the repository code
       - uses: actions/checkout@v4
+
+      # Step 2: Set up JDK 17 for the build
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
           distribution: "temurin"
           cache: maven
+
+      # Step 3: Build the project using Maven
       - name: Build with Maven
         run: mvn -B package --file pom.xml
-        
 
+  # -------------------------------
+  # Job: Security-check
+  # -------------------------------
   Security-check:
+    # Specify the runner and define dependency on the "compile" job
     runs-on: self-hosted
-    needs:  complie
+    needs: compile
 
     steps:
+      # Step 1: Check out the repository code
       - uses: actions/checkout@v4
-      - name: trivy Install
+
+      # Step 2: Install Trivy and Gitleaks for security and secret scanning
+      - name: Install Trivy and Gitleaks
         run: |
           sudo apt-get install wget apt-transport-https gnupg lsb-release -y
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
           echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
           sudo apt-get update -y
-          sudo apt-get install trivy -y
-      - name: trivy Scan
+          sudo apt-get install trivy gitleaks -y
+
+      # Step 3: Perform a Trivy scan on the file system
+      - name: Trivy Scan
         run: trivy fs --format table -o fs-report.json .
 
-      - name: Gitleaks Install
-        run: sudo apt install gitleaks -y
-
+      # Step 4: Perform a Gitleaks scan for secrets in the code
       - name: Gitleaks Code Scan
         run: gitleaks detect source . -r gitleaks-report.json -f json
+
+  # -------------------------------
+  # Job: Test
+  # -------------------------------
+  test:
+    # Specify the runner to execute the job
+    runs-on: self-hosted
+    needs: Security-check
+
+    steps:
+      # Step 1: Check out the repository code
+      - uses: actions/checkout@v4
+
+      # Step 2: Set up JDK 17 for running tests
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      # Step 3: Run unit tests using Maven
+      - name: Unit test Cases
+        run: mvn test
+
+  # -------------------------------
+  # Job: Project-Build-SonarQube-test
+  # -------------------------------
+  Project-Build-SonarQube-test:
+    # Specify the runner to execute the job
+    runs-on: self-hosted
+    needs: test
+
+    services:
+      # Define a SonarQube service using Docker
+      sonarqube:
+        image: sonarqube:latest
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd="curl -s http://localhost:9000/api/system/health | grep -q UP"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      # Step 1: Check out the repository code with full history for SonarQube analysis
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Step 2: Set up JDK 17 for building the project
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: maven
+
+      # Step 3: Build the project using Maven
+      - name: Build Project
+        run: mvn package
+
+      # Step 4: Wait for SonarQube to be ready
+      - name: Wait for SonarQube to be ready
+        run: |
+          echo "Waiting for SonarQube to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:9000/api/system/health | grep -q UP; then
+              echo "SonarQube is ready!"
+              break
+            fi
+            echo "Waiting for SonarQube..."
+            sleep 10
+          done
+
+      # Step 5: Run SonarQube scan
+      - name: SonarQube Scan
+        run: mvn sonar:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=admin -Dsonar.password=admin
